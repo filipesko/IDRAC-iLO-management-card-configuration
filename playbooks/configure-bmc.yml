@@ -121,11 +121,11 @@
           - bmc_password | length > 0
           - bmc_hostname | length > 0
           - domain_name | length > 0
-          - ilo_dns_servers | length > 0
-          - ilo_ntp_servers | length > 0
+          - dns_servers | length > 0
+          - ntp_servers | length > 0
           - bmc_timezone | length > 0
-          - ilo_snmp_trap_destination | length > 0
-          - ilo_snmp_trap_community | length > 0
+          - snmp_destination | length > 0
+          - snmp_community | length > 0
         fail_msg: Set all required values in the selected region vars file.
 
   tasks:
@@ -211,11 +211,11 @@
         body:
           TimeZone:
             Index: "{{ ilo_timezone_matches[0].Index }}"
-          StaticNTPServers: "{{ ilo_ntp_servers }}"
+          StaticNTPServers: "{{ ntp_servers }}"
         status_code: [200, 204]
       when: >-
         (ilo_datetime.json.TimeZone.Index | int != ilo_timezone_matches[0].Index | int) or
-        (ilo_datetime.json.StaticNTPServers | default([]) != ilo_ntp_servers)
+        (ilo_datetime.json.StaticNTPServers | default([]) != ntp_servers)
       no_log: "{{ ilo_no_log }}"
 
     - name: Read iLO Ethernet interface collection
@@ -248,7 +248,7 @@
         body_format: json
         body:
           HostName: "{{ bmc_hostname }}"
-          StaticNameServers: "{{ ilo_dns_servers }}"
+          StaticNameServers: "{{ dns_servers }}"
           DHCPv4:
             UseDNSServers: false
             UseDomainName: false
@@ -259,7 +259,7 @@
       when: >-
         (ilo_network.json.HostName | default('') != bmc_hostname) or
         (ilo_network.json.Oem.Hpe.DomainName | default('') != domain_name) or
-        (ilo_network.json.StaticNameServers | default([]) != ilo_dns_servers) or
+        (ilo_network.json.StaticNameServers | default([]) != dns_servers) or
         (ilo_network.json.DHCPv4.UseDNSServers | default(true) | bool) or
         (ilo_network.json.DHCPv4.UseDomainName | default(true) | bool)
       no_log: "{{ ilo_no_log }}"
@@ -336,7 +336,7 @@
         ilo_matching_snmp_destinations: >-
           {{ ilo_snmp_destination_details.results | default([])
              | selectattr('json.AlertDestination', 'defined')
-             | selectattr('json.AlertDestination', 'equalto', ilo_snmp_trap_destination)
+             | selectattr('json.AlertDestination', 'equalto', snmp_destination)
              | list }}
 
     - name: Add SNMPv1 trap destination
@@ -345,9 +345,9 @@
         method: POST
         body_format: json
         body:
-          AlertDestination: "{{ ilo_snmp_trap_destination }}"
+          AlertDestination: "{{ snmp_destination }}"
           SNMPAlertProtocol: SNMPv1Trap
-          TrapCommunity: "{{ ilo_snmp_trap_community }}"
+          TrapCommunity: "{{ snmp_community }}"
         status_code: [200, 201, 204]
       when: ilo_matching_snmp_destinations | length == 0
       no_log: "{{ ilo_no_log }}"
@@ -358,14 +358,14 @@
         method: PATCH
         body_format: json
         body:
-          AlertDestination: "{{ ilo_snmp_trap_destination }}"
+          AlertDestination: "{{ snmp_destination }}"
           SNMPAlertProtocol: SNMPv1Trap
-          TrapCommunity: "{{ ilo_snmp_trap_community }}"
+          TrapCommunity: "{{ snmp_community }}"
         status_code: [200, 204]
       when: >-
         ilo_matching_snmp_destinations | length > 0 and
         (ilo_matching_snmp_destinations[0].json.SNMPAlertProtocol | default('') != 'SNMPv1Trap' or
-         ilo_matching_snmp_destinations[0].json.TrapCommunity | default('') != ilo_snmp_trap_community)
+         ilo_matching_snmp_destinations[0].json.TrapCommunity | default('') != snmp_community)
       no_log: "{{ ilo_no_log }}"
 
 - name: Configure Dell PowerEdge iDRAC 9 or 10
@@ -382,13 +382,13 @@
           - bmc_password | length > 0
           - bmc_hostname | length > 0
           - domain_name | length > 0
-          - idrac_dns_servers | length >= 1
-          - idrac_dns_servers | length <= 3
-          - idrac_ntp_servers | length >= 1
-          - idrac_ntp_servers | length <= 3
+          - dns_servers | length >= 1
+          - dns_servers | length <= 3
+          - ntp_servers | length >= 1
+          - ntp_servers | length <= 3
           - bmc_timezone | length > 0
-          - idrac_snmp_trap_destination | length > 0
-          - idrac_snmp_trap_community | length > 0
+          - snmp_destination | length > 0
+          - snmp_community | length > 0
           - idrac_snmp_destination_index | int >= 1
           - idrac_snmp_destination_index | int <= 8
         fail_msg: Set the required values in the selected region vars file.
@@ -405,24 +405,24 @@
           # iDRAC accepts the configured IANA-style time zone directly.
           Time.1.Timezone: "{{ bmc_timezone }}"
           NTPConfigGroup.1.NTPEnable: Enabled
-          NTPConfigGroup.1.NTP1: "{{ idrac_ntp_servers[0] | default('') }}"
-          NTPConfigGroup.1.NTP2: "{{ idrac_ntp_servers[1] | default('') }}"
-          NTPConfigGroup.1.NTP3: "{{ idrac_ntp_servers[2] | default('') }}"
+          NTPConfigGroup.1.NTP1: "{{ ntp_servers[0] | default('') }}"
+          NTPConfigGroup.1.NTP2: "{{ ntp_servers[1] | default('') }}"
+          NTPConfigGroup.1.NTP3: "{{ ntp_servers[2] | default('') }}"
           NIC.1.DNSRacName: "{{ bmc_hostname }}"
           NIC.1.DNSDomainNameFromDHCP: Disabled
           NICStatic.1.DNSDomainFromDHCP: Disabled
           NICStatic.1.DNSDomainName: "{{ domain_name }}"
           IPv4.1.DNSFromDHCP: Disabled
           IPv4Static.1.DNSFromDHCP: Disabled
-          IPv4Static.1.DNS1: "{{ idrac_dns_servers[0] | default('0.0.0.0') }}"
-          IPv4Static.1.DNS2: "{{ idrac_dns_servers[1] | default('0.0.0.0') }}"
-          IPv4Static.1.DNS3: "{{ idrac_dns_servers[2] | default('0.0.0.0') }}"
+          IPv4Static.1.DNS1: "{{ dns_servers[0] | default('0.0.0.0') }}"
+          IPv4Static.1.DNS2: "{{ dns_servers[1] | default('0.0.0.0') }}"
+          IPv4Static.1.DNS3: "{{ dns_servers[2] | default('0.0.0.0') }}"
           IPMILan.1.AlertEnable: Enabled
-          IPMILan.1.CommunityName: "{{ idrac_snmp_trap_community }}"
+          IPMILan.1.CommunityName: "{{ snmp_community }}"
           SNMP.1.AgentEnable: Enabled
-          SNMP.1.AgentCommunity: "{{ idrac_snmp_trap_community }}"
+          SNMP.1.AgentCommunity: "{{ snmp_community }}"
           # Explicitly force SNMP version 1 for outbound traps.
           SNMP.1.TrapFormat: SNMPv1
-          "SNMPAlert.{{ idrac_snmp_destination_index }}.Destination": "{{ idrac_snmp_trap_destination }}"
+          "SNMPAlert.{{ idrac_snmp_destination_index }}.Destination": "{{ snmp_destination }}"
           "SNMPAlert.{{ idrac_snmp_destination_index }}.State": Enabled
       no_log: "{{ idrac_no_log }}"

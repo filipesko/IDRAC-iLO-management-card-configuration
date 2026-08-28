@@ -44,8 +44,8 @@ The matching file is loaded automatically:
 - `vars/apac_vars.yml`
 
 These files contain the remaining settings, including the password, shared
-`domain_name`, DNS, NTP, timezone, certificate policy, and SNMP
-destination/community.
+`domain_name`, shared `dns_servers` and `ntp_servers`, timezone, certificate
+policy, shared `snmp_destination`, and `snmp_community`.
 Replace all example values before use.
 
 Each regional file specifies its timezone once using the IANA-style convention

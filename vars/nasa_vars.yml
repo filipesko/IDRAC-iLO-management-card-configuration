@@ -6,17 +6,13 @@ bmc_no_log: true
 bmc_timezone: "US/Eastern"
 
 domain_name: "nasa.example.com"
-ilo_dns_servers: ["198.51.100.53", "198.51.100.54"]
-ilo_ntp_servers: ["ntp1.nasa.example.com", "ntp2.nasa.example.com"]
-ilo_snmp_trap_destination: "198.51.100.60"
-ilo_snmp_trap_community: "CHANGE-ME-USE-ANSIBLE-VAULT"
+dns_servers: ["198.51.100.53", "198.51.100.54"]
+ntp_servers: ["ntp1.nasa.example.com", "ntp2.nasa.example.com"]
+snmp_destination: "198.51.100.60"
+snmp_community: "CHANGE-ME-USE-ANSIBLE-VAULT"
 ilo_ethernet_interface_uri: ""
 ilo_no_log: true
 
-idrac_dns_servers: ["198.51.100.53", "198.51.100.54"]
-idrac_ntp_servers: ["ntp1.nasa.example.com", "ntp2.nasa.example.com"]
-idrac_snmp_trap_destination: "198.51.100.60"
-idrac_snmp_trap_community: "CHANGE-ME-USE-ANSIBLE-VAULT"
 idrac_snmp_destination_index: 1
 idrac_timeout: 60
 idrac_no_log: true
