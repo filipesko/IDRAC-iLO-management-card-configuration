@@ -1,0 +1,428 @@
+---
+- name: Discover BMC vendor through Redfish
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  module_defaults:
+    ansible.builtin.uri:
+      url_username: "{{ bmc_username }}"
+      url_password: "{{ bmc_password }}"
+      force_basic_auth: true
+      validate_certs: "{{ bmc_validate_certs }}"
+      return_content: true
+      headers:
+        Accept: application/json
+        Content-Type: application/json
+        OData-Version: "4.0"
+  tasks:
+    - name: Validate required input variables
+      ansible.builtin.assert:
+        that:
+          - bmc_ip | default('') | length > 0
+          - bmc_username | default('') | length > 0
+          - bmc_hostname | default('') | length > 0
+          - region | default('') | upper in ['EMEA', 'NASA', 'APAC']
+        fail_msg: >-
+          Required inputs are bmc_ip, bmc_username, bmc_hostname, and region.
+          Region must be EMEA, NASA, or APAC.
+
+    - name: Load region-specific configuration
+      ansible.builtin.include_vars:
+        file: "../vars/{{ region | lower }}_vars.yml"
+
+    - name: Validate region-specific credentials
+      ansible.builtin.assert:
+        that:
+          - bmc_password | default('') | length > 0
+        fail_msg: "bmc_password must be set in vars/{{ region | lower }}_vars.yml."
+
+    - name: Read Redfish manager collection for vendor discovery
+      ansible.builtin.uri:
+        url: "https://{{ bmc_ip }}/redfish/v1/Managers"
+        method: GET
+        status_code: 200
+      register: bmc_manager_collection
+      no_log: "{{ bmc_no_log }}"
+
+    - name: Ensure Redfish returned a manager
+      ansible.builtin.assert:
+        that: bmc_manager_collection.json.Members | default([]) | length > 0
+        fail_msg: The Redfish Managers collection is empty.
+
+    - name: Read detected Redfish manager
+      ansible.builtin.uri:
+        url: >-
+          https://{{ bmc_ip }}{{ bmc_manager_collection.json.Members[0]['@odata.id'] }}
+        method: GET
+        status_code: 200
+      register: bmc_detected_manager
+      no_log: "{{ bmc_no_log }}"
+
+    - name: Build normalized BMC identity
+      ansible.builtin.set_fact:
+        bmc_identity: "{{ bmc_detected_manager.json | to_json | lower }}"
+
+    - name: Identify HPE iLO or Dell iDRAC
+      ansible.builtin.set_fact:
+        bmc_vendor: >-
+          {{ 'hpe' if ('hpe' in bmc_identity or 'hewlett' in bmc_identity or 'ilo' in bmc_identity)
+             else ('dell' if ('dell' in bmc_identity or 'idrac' in bmc_identity) else 'unknown') }}
+
+    - name: Require a supported discovered BMC
+      ansible.builtin.assert:
+        that: bmc_vendor in ['hpe', 'dell']
+        fail_msg: >-
+          Unsupported BMC. Redfish reported Manufacturer='{{ bmc_detected_manager.json.Manufacturer | default('unknown') }}',
+          Model='{{ bmc_detected_manager.json.Model | default('unknown') }}'.
+
+    - name: Show discovered BMC vendor
+      ansible.builtin.debug:
+        msg: >-
+          Detected {{ 'HPE iLO' if bmc_vendor == 'hpe' else 'Dell iDRAC' }} at {{ bmc_ip }}.
+
+- name: Configure HPE ProLiant iLO through Redfish
+  hosts: "{{ 'localhost' if hostvars['localhost']['bmc_vendor'] == 'hpe' else 'bmc_vendor_not_selected' }}"
+  connection: local
+  gather_facts: false
+
+  module_defaults:
+    ansible.builtin.uri:
+      url_username: "{{ bmc_username }}"
+      url_password: "{{ bmc_password }}"
+      force_basic_auth: true
+      validate_certs: "{{ bmc_validate_certs }}"
+      return_content: true
+      headers:
+        Accept: application/json
+        Content-Type: application/json
+        OData-Version: "4.0"
+
+  vars:
+    ilo_base_url: "https://{{ bmc_ip }}"
+    # IANA-to-iLO aliases. The advertised TimeZoneList determines which
+    # candidate is used, so this remains compatible across iLO generations.
+    ilo_timezone_name_map:
+      UTC: [Etc/UTC, UTC, Utc0, "Greenwich Mean Time, Dublin, London"]
+      US/Eastern: [EST5EDT, UtcM5, "Eastern Time(US & Canada)", "Eastern Time (US & Canada)"]
+      US/Central: [CST6CDT, UtcM6, "Central America, Central Time(US & Canada)", "Central Time (US & Canada)"]
+      US/Mountain: [MST7MDT, UtcM7, "Mountain Time (US & Canada)"]
+      US/Pacific: [PST8PDT, UtcM8, "Pacific Time(US & Canada)", "Pacific Time (US & Canada)"]
+      Europe/London: [GMT0BST, Utc0, "Greenwich Mean Time, Dublin, London"]
+      Europe/Brussels: [CET-1CEST, CET, UtcP1, "Amsterdam, Berlin, Rome, Paris, West Central Africa", "Amsterdam, Berlin, Bern, Rome, Stockholm, Vienna"]
+      Europe/Warsaw: [CET-1CEST, CET, UtcP1, "Amsterdam, Berlin, Rome, Paris, West Central Africa", Warsaw]
+      Asia/Singapore: [SGT-8, UtcP8, "Kuala Lumpur, Singapore", "Taipei, Beijing, Chongqing, Hong Kong, Urumqi"]
+
+  pre_tasks:
+    - name: Validate required settings
+      ansible.builtin.assert:
+        that:
+          - bmc_ip | length > 0
+          - bmc_username | length > 0
+          - bmc_password | length > 0
+          - bmc_hostname | length > 0
+          - domain_name | length > 0
+          - ilo_dns_servers | length > 0
+          - ilo_ntp_servers | length > 0
+          - bmc_timezone | length > 0
+          - ilo_snmp_trap_destination | length > 0
+          - ilo_snmp_trap_community | length > 0
+        fail_msg: Set all required values in the selected region vars file.
+
+  tasks:
+    - name: Read Redfish manager collection
+      ansible.builtin.uri:
+        url: "{{ ilo_base_url }}/redfish/v1/Managers"
+        method: GET
+        status_code: 200
+      register: ilo_managers
+      no_log: "{{ ilo_no_log }}"
+
+    - name: Select the iLO manager
+      ansible.builtin.set_fact:
+        ilo_manager_uri: "{{ ilo_managers.json.Members[0]['@odata.id'] }}"
+
+    - name: Read iLO manager
+      ansible.builtin.uri:
+        url: "{{ ilo_base_url }}{{ ilo_manager_uri }}"
+        method: GET
+        status_code: 200
+      register: ilo_manager
+      no_log: "{{ ilo_no_log }}"
+
+    - name: Discover linked iLO resources
+      ansible.builtin.set_fact:
+        ilo_datetime_uri: >-
+          {{ ilo_manager.json.Oem.Hpe.Links.DateTimeService['@odata.id']
+             | default(ilo_manager_uri ~ '/DateTime') }}
+        ilo_snmp_uri: >-
+          {{ ilo_manager.json.Oem.Hpe.Links.SNMPService['@odata.id']
+             | default(ilo_manager_uri ~ '/SnmpService') }}
+        ilo_ethernet_collection_uri: >-
+          {{ ilo_manager.json.EthernetInterfaces['@odata.id']
+             | default(ilo_manager_uri ~ '/EthernetInterfaces') }}
+        ilo_network_protocol_uri: >-
+          {{ ilo_manager.json.NetworkProtocol['@odata.id']
+             | default(ilo_manager_uri ~ '/NetworkProtocol') }}
+
+    - name: Read iLO date and time settings
+      ansible.builtin.uri:
+        url: "{{ ilo_base_url }}{{ ilo_datetime_uri }}"
+        method: GET
+        status_code: 200
+      register: ilo_datetime
+      no_log: "{{ ilo_no_log }}"
+
+    - name: Convert IANA time zone into iLO candidate names
+      ansible.builtin.set_fact:
+        ilo_timezone_candidates: >-
+          {{ [bmc_timezone] + (ilo_timezone_name_map[bmc_timezone] | default([])) }}
+
+    - name: Find converted time zone by iLO value
+      ansible.builtin.set_fact:
+        ilo_timezone_matches: >-
+          {{ (ilo_datetime.json.TimeZoneList | default([]))
+             | selectattr('Value', 'defined')
+             | selectattr('Value', 'in', ilo_timezone_candidates)
+             | list }}
+
+    - name: Fall back to matching the time zone display name
+      ansible.builtin.set_fact:
+        ilo_timezone_matches: >-
+          {{ (ilo_datetime.json.TimeZoneList | default([]))
+             | selectattr('Name', 'defined')
+             | selectattr('Name', 'in', ilo_timezone_candidates)
+             | list }}
+      when: ilo_timezone_matches | length == 0
+
+    - name: Ensure requested time zone exists in iLO firmware
+      ansible.builtin.assert:
+        that: ilo_timezone_matches | length > 0
+        fail_msg: >-
+          IANA time zone '{{ bmc_timezone }}' could not be converted for this iLO.
+          Tried {{ ilo_timezone_candidates }}. Add a matching Name or Value from the
+          controller's TimeZoneList to ilo_timezone_name_map. Available entries:
+          {{ ilo_datetime.json.TimeZoneList | default([]) }}
+
+    - name: Configure time zone and static NTP servers
+      ansible.builtin.uri:
+        url: "{{ ilo_base_url }}{{ ilo_datetime_uri }}"
+        method: PATCH
+        body_format: json
+        body:
+          TimeZone:
+            Index: "{{ ilo_timezone_matches[0].Index }}"
+          StaticNTPServers: "{{ ilo_ntp_servers }}"
+        status_code: [200, 204]
+      when: >-
+        (ilo_datetime.json.TimeZone.Index | int != ilo_timezone_matches[0].Index | int) or
+        (ilo_datetime.json.StaticNTPServers | default([]) != ilo_ntp_servers)
+      no_log: "{{ ilo_no_log }}"
+
+    - name: Read iLO Ethernet interface collection
+      ansible.builtin.uri:
+        url: "{{ ilo_base_url }}{{ ilo_ethernet_collection_uri }}"
+        method: GET
+        status_code: 200
+      register: ilo_ethernet_collection
+      no_log: "{{ ilo_no_log }}"
+
+    - name: Select iLO management Ethernet interface
+      ansible.builtin.set_fact:
+        ilo_ethernet_uri: >-
+          {{ ilo_ethernet_interface_uri
+             if ilo_ethernet_interface_uri | length > 0
+             else ilo_ethernet_collection.json.Members[0]['@odata.id'] }}
+
+    - name: Read iLO network settings
+      ansible.builtin.uri:
+        url: "{{ ilo_base_url }}{{ ilo_ethernet_uri }}"
+        method: GET
+        status_code: 200
+      register: ilo_network
+      no_log: "{{ ilo_no_log }}"
+
+    - name: Configure iLO host name, domain and DNS servers
+      ansible.builtin.uri:
+        url: "{{ ilo_base_url }}{{ ilo_ethernet_uri }}"
+        method: PATCH
+        body_format: json
+        body:
+          HostName: "{{ bmc_hostname }}"
+          StaticNameServers: "{{ ilo_dns_servers }}"
+          DHCPv4:
+            UseDNSServers: false
+            UseDomainName: false
+          Oem:
+            Hpe:
+              DomainName: "{{ domain_name }}"
+        status_code: [200, 204]
+      when: >-
+        (ilo_network.json.HostName | default('') != bmc_hostname) or
+        (ilo_network.json.Oem.Hpe.DomainName | default('') != domain_name) or
+        (ilo_network.json.StaticNameServers | default([]) != ilo_dns_servers) or
+        (ilo_network.json.DHCPv4.UseDNSServers | default(true) | bool) or
+        (ilo_network.json.DHCPv4.UseDomainName | default(true) | bool)
+      no_log: "{{ ilo_no_log }}"
+
+    - name: Read SNMP service
+      ansible.builtin.uri:
+        url: "{{ ilo_base_url }}{{ ilo_snmp_uri }}"
+        method: GET
+        status_code: 200
+      register: ilo_snmp
+      no_log: "{{ ilo_no_log }}"
+
+    - name: Read iLO manager network protocols
+      ansible.builtin.uri:
+        url: "{{ ilo_base_url }}{{ ilo_network_protocol_uri }}"
+        method: GET
+        status_code: 200
+      register: ilo_network_protocol
+      no_log: "{{ ilo_no_log }}"
+
+    - name: Enable the SNMP protocol
+      ansible.builtin.uri:
+        url: "{{ ilo_base_url }}{{ ilo_network_protocol_uri }}"
+        method: PATCH
+        body_format: json
+        body:
+          SNMP:
+            ProtocolEnabled: true
+        status_code: [200, 204]
+      when: not (ilo_network_protocol.json.SNMP.ProtocolEnabled | default(false) | bool)
+      no_log: "{{ ilo_no_log }}"
+
+    - name: Enable SNMP and SNMPv1 traps
+      ansible.builtin.uri:
+        url: "{{ ilo_base_url }}{{ ilo_snmp_uri }}"
+        method: PATCH
+        body_format: json
+        body:
+          AlertsEnabled: true
+          SNMPv1Enabled: true
+          SNMPv1TrapEnabled: true
+        status_code: [200, 204]
+      when: >-
+        not (ilo_snmp.json.AlertsEnabled | default(false) | bool) or
+        not (ilo_snmp.json.SNMPv1Enabled | default(false) | bool) or
+        not (ilo_snmp.json.SNMPv1TrapEnabled | default(false) | bool)
+      no_log: "{{ ilo_no_log }}"
+
+    - name: Determine SNMP destination collection URI
+      ansible.builtin.set_fact:
+        ilo_snmp_destinations_uri: >-
+          {{ ilo_snmp.json.SNMPAlertDestinations['@odata.id']
+             | default(ilo_snmp_uri ~ '/SNMPAlertDestinations') }}
+
+    - name: Read SNMP trap destinations
+      ansible.builtin.uri:
+        url: "{{ ilo_base_url }}{{ ilo_snmp_destinations_uri }}"
+        method: GET
+        status_code: 200
+      register: ilo_snmp_destinations
+      no_log: "{{ ilo_no_log }}"
+
+    - name: Read configured SNMP trap destinations
+      ansible.builtin.uri:
+        url: "{{ ilo_base_url }}{{ item['@odata.id'] }}"
+        method: GET
+        status_code: 200
+      loop: "{{ ilo_snmp_destinations.json.Members | default([]) }}"
+      register: ilo_snmp_destination_details
+      no_log: "{{ ilo_no_log }}"
+
+    - name: Select an existing matching SNMP destination
+      ansible.builtin.set_fact:
+        ilo_matching_snmp_destinations: >-
+          {{ ilo_snmp_destination_details.results | default([])
+             | selectattr('json.AlertDestination', 'defined')
+             | selectattr('json.AlertDestination', 'equalto', ilo_snmp_trap_destination)
+             | list }}
+
+    - name: Add SNMPv1 trap destination
+      ansible.builtin.uri:
+        url: "{{ ilo_base_url }}{{ ilo_snmp_destinations_uri }}"
+        method: POST
+        body_format: json
+        body:
+          AlertDestination: "{{ ilo_snmp_trap_destination }}"
+          SNMPAlertProtocol: SNMPv1Trap
+          TrapCommunity: "{{ ilo_snmp_trap_community }}"
+        status_code: [200, 201, 204]
+      when: ilo_matching_snmp_destinations | length == 0
+      no_log: "{{ ilo_no_log }}"
+
+    - name: Update matching SNMPv1 trap destination
+      ansible.builtin.uri:
+        url: "{{ ilo_base_url }}{{ ilo_matching_snmp_destinations[0].item['@odata.id'] }}"
+        method: PATCH
+        body_format: json
+        body:
+          AlertDestination: "{{ ilo_snmp_trap_destination }}"
+          SNMPAlertProtocol: SNMPv1Trap
+          TrapCommunity: "{{ ilo_snmp_trap_community }}"
+        status_code: [200, 204]
+      when: >-
+        ilo_matching_snmp_destinations | length > 0 and
+        (ilo_matching_snmp_destinations[0].json.SNMPAlertProtocol | default('') != 'SNMPv1Trap' or
+         ilo_matching_snmp_destinations[0].json.TrapCommunity | default('') != ilo_snmp_trap_community)
+      no_log: "{{ ilo_no_log }}"
+
+- name: Configure Dell PowerEdge iDRAC 9 or 10
+  hosts: "{{ 'localhost' if hostvars['localhost']['bmc_vendor'] == 'dell' else 'bmc_vendor_not_selected' }}"
+  connection: local
+  gather_facts: false
+
+  pre_tasks:
+    - name: Validate Dell iDRAC settings
+      ansible.builtin.assert:
+        that:
+          - bmc_ip | length > 0
+          - bmc_username | length > 0
+          - bmc_password | length > 0
+          - bmc_hostname | length > 0
+          - domain_name | length > 0
+          - idrac_dns_servers | length >= 1
+          - idrac_dns_servers | length <= 3
+          - idrac_ntp_servers | length >= 1
+          - idrac_ntp_servers | length <= 3
+          - bmc_timezone | length > 0
+          - idrac_snmp_trap_destination | length > 0
+          - idrac_snmp_trap_community | length > 0
+          - idrac_snmp_destination_index | int >= 1
+          - idrac_snmp_destination_index | int <= 8
+        fail_msg: Set the required values in the selected region vars file.
+
+  tasks:
+    - name: Configure Dell iDRAC identity, time, DNS and SNMPv1 traps
+      dellemc.openmanage.idrac_attributes:
+        idrac_ip: "{{ bmc_ip }}"
+        idrac_user: "{{ bmc_username }}"
+        idrac_password: "{{ bmc_password }}"
+        validate_certs: "{{ bmc_validate_certs }}"
+        timeout: "{{ idrac_timeout }}"
+        idrac_attributes:
+          # iDRAC accepts the configured IANA-style time zone directly.
+          Time.1.Timezone: "{{ bmc_timezone }}"
+          NTPConfigGroup.1.NTPEnable: Enabled
+          NTPConfigGroup.1.NTP1: "{{ idrac_ntp_servers[0] | default('') }}"
+          NTPConfigGroup.1.NTP2: "{{ idrac_ntp_servers[1] | default('') }}"
+          NTPConfigGroup.1.NTP3: "{{ idrac_ntp_servers[2] | default('') }}"
+          NIC.1.DNSRacName: "{{ bmc_hostname }}"
+          NIC.1.DNSDomainNameFromDHCP: Disabled
+          NICStatic.1.DNSDomainFromDHCP: Disabled
+          NICStatic.1.DNSDomainName: "{{ domain_name }}"
+          IPv4.1.DNSFromDHCP: Disabled
+          IPv4Static.1.DNSFromDHCP: Disabled
+          IPv4Static.1.DNS1: "{{ idrac_dns_servers[0] | default('0.0.0.0') }}"
+          IPv4Static.1.DNS2: "{{ idrac_dns_servers[1] | default('0.0.0.0') }}"
+          IPv4Static.1.DNS3: "{{ idrac_dns_servers[2] | default('0.0.0.0') }}"
+          IPMILan.1.AlertEnable: Enabled
+          IPMILan.1.CommunityName: "{{ idrac_snmp_trap_community }}"
+          SNMP.1.AgentEnable: Enabled
+          SNMP.1.AgentCommunity: "{{ idrac_snmp_trap_community }}"
+          # Explicitly force SNMP version 1 for outbound traps.
+          SNMP.1.TrapFormat: SNMPv1
+          "SNMPAlert.{{ idrac_snmp_destination_index }}.Destination": "{{ idrac_snmp_trap_destination }}"
+          "SNMPAlert.{{ idrac_snmp_destination_index }}.State": Enabled
+      no_log: "{{ idrac_no_log }}"

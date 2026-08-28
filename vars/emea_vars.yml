@@ -1,0 +1,22 @@
+---
+# EMEA regional configuration. Encrypt this file with Ansible Vault.
+bmc_password: "CHANGE-ME-USE-ANSIBLE-VAULT"
+bmc_validate_certs: false
+bmc_no_log: true
+bmc_timezone: "Europe/Brussels"
+
+domain_name: "emea.example.com"
+ilo_dns_servers: ["192.0.2.53", "192.0.2.54"]
+ilo_ntp_servers: ["ntp1.emea.example.com", "ntp2.emea.example.com"]
+ilo_snmp_trap_destination: "192.0.2.60"
+ilo_snmp_trap_community: "CHANGE-ME-USE-ANSIBLE-VAULT"
+ilo_ethernet_interface_uri: ""
+ilo_no_log: true
+
+idrac_dns_servers: ["192.0.2.53", "192.0.2.54"]
+idrac_ntp_servers: ["ntp1.emea.example.com", "ntp2.emea.example.com"]
+idrac_snmp_trap_destination: "192.0.2.60"
+idrac_snmp_trap_community: "CHANGE-ME-USE-ANSIBLE-VAULT"
+idrac_snmp_destination_index: 1
+idrac_timeout: 60
+idrac_no_log: true
