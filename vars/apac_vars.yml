@@ -4,7 +4,7 @@ bmc_password: "CHANGE-ME-USE-ANSIBLE-VAULT"
 bmc_validate_certs: false
 bmc_no_log: true
 no_log: true
-bmc_timezone: "Asia/Singapore"
+bmc_timezone: "Asia/Shanghai"
 
 domain_name: "apac.example.com"
 dns_servers: ["203.0.113.53", "203.0.113.54"]

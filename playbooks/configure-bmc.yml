@@ -30,11 +30,30 @@
       ansible.builtin.include_vars:
         file: "../vars/{{ region | lower }}_vars.yml"
 
-    - name: Validate region-specific credentials
+    - name: Validate region-specific variable schema
       ansible.builtin.assert:
         that:
           - bmc_password | default('') | length > 0
-        fail_msg: "bmc_password must be set in vars/{{ region | lower }}_vars.yml."
+          - bmc_validate_certs | default('') | type_debug == 'bool'
+          - bmc_no_log | default('') | type_debug == 'bool'
+          - no_log | default('') | type_debug == 'bool'
+          - bmc_timezone | default('') | length > 0
+          - domain_name | default('') | length > 0
+          - dns_servers | default([]) | type_debug == 'list'
+          - dns_servers | default([]) | length >= 1
+          - dns_servers | default([]) | length <= 3
+          - ntp_servers | default([]) | type_debug == 'list'
+          - ntp_servers | default([]) | length >= 1
+          - ntp_servers | default([]) | length <= 3
+          - snmp_destination | default('') | length > 0
+          - snmp_community | default('') | length > 0
+          - ilo_ethernet_interface_uri is defined
+          - idrac_snmp_destination_index | default(0) | int >= 1
+          - idrac_snmp_destination_index | default(0) | int <= 8
+          - idrac_timeout | default(0) | int > 0
+        fail_msg: >-
+          The variable schema in vars/{{ region | lower }}_vars.yml is incomplete
+          or invalid. Compare it with the other regional files.
 
     - name: Read Redfish manager collection for vendor discovery
       ansible.builtin.uri:
@@ -99,18 +118,13 @@
 
   vars:
     ilo_base_url: "https://{{ bmc_ip }}"
-    # IANA-to-iLO aliases. The advertised TimeZoneList determines which
-    # candidate is used, so this remains compatible across iLO generations.
+    # Convert the three fixed regional IANA names to values/names exposed by
+    # different iLO firmware generations. The actual TimeZoneList entry is
+    # selected dynamically below, so no numeric index is hard-coded.
     ilo_timezone_name_map:
-      UTC: [Etc/UTC, UTC, Utc0, "Greenwich Mean Time, Dublin, London"]
       US/Eastern: [EST5EDT, UtcM5, "Eastern Time(US & Canada)", "Eastern Time (US & Canada)"]
-      US/Central: [CST6CDT, UtcM6, "Central America, Central Time(US & Canada)", "Central Time (US & Canada)"]
-      US/Mountain: [MST7MDT, UtcM7, "Mountain Time (US & Canada)"]
-      US/Pacific: [PST8PDT, UtcM8, "Pacific Time(US & Canada)", "Pacific Time (US & Canada)"]
-      Europe/London: [GMT0BST, Utc0, "Greenwich Mean Time, Dublin, London"]
       Europe/Brussels: [CET-1CEST, CET, UtcP1, "Amsterdam, Berlin, Rome, Paris, West Central Africa", "Amsterdam, Berlin, Bern, Rome, Stockholm, Vienna"]
-      Europe/Warsaw: [CET-1CEST, CET, UtcP1, "Amsterdam, Berlin, Rome, Paris, West Central Africa", Warsaw]
-      Asia/Singapore: [SGT-8, UtcP8, "Kuala Lumpur, Singapore", "Taipei, Beijing, Chongqing, Hong Kong, Urumqi"]
+      Asia/Shanghai: [CST-8, UtcP8, "Beijing, Chongqing, Hong Kong, Urumqi", "Taipei, Beijing, Chongqing, Hong Kong, Urumqi"]
 
   pre_tasks:
     - name: Validate required settings

@@ -57,8 +57,9 @@ bmc_timezone: "Europe/Brussels"
 
 For HPE iLO, the playbook converts this value through
 `ilo_timezone_name_map` and selects the matching `Name` or `Value` advertised
-by that controller's Redfish `TimeZoneList`. The supplied map includes common
-US, European, and APAC zones.
+by that controller's Redfish `TimeZoneList`. The converter contains only the
+three fixed regional values: `Europe/Brussels`, `US/Eastern`, and
+`Asia/Shanghai`.
 
 Encrypt the regional files because they contain credentials and SNMP community
 strings:
