@@ -3,6 +3,7 @@
 bmc_password: "CHANGE-ME-USE-ANSIBLE-VAULT"
 bmc_validate_certs: false
 bmc_no_log: true
+no_log: true
 bmc_timezone: "Europe/Brussels"
 
 domain_name: "emea.example.com"
@@ -11,8 +12,6 @@ ntp_servers: ["ntp1.emea.example.com", "ntp2.emea.example.com"]
 snmp_destination: "192.0.2.60"
 snmp_community: "CHANGE-ME-USE-ANSIBLE-VAULT"
 ilo_ethernet_interface_uri: ""
-ilo_no_log: true
 
 idrac_snmp_destination_index: 1
 idrac_timeout: 60
-idrac_no_log: true

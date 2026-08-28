@@ -135,7 +135,7 @@
         method: GET
         status_code: 200
       register: ilo_managers
-      no_log: "{{ ilo_no_log }}"
+      no_log: "{{ no_log }}"
 
     - name: Select the iLO manager
       ansible.builtin.set_fact:
@@ -147,7 +147,7 @@
         method: GET
         status_code: 200
       register: ilo_manager
-      no_log: "{{ ilo_no_log }}"
+      no_log: "{{ no_log }}"
 
     - name: Discover linked iLO resources
       ansible.builtin.set_fact:
@@ -170,7 +170,7 @@
         method: GET
         status_code: 200
       register: ilo_datetime
-      no_log: "{{ ilo_no_log }}"
+      no_log: "{{ no_log }}"
 
     - name: Convert IANA time zone into iLO candidate names
       ansible.builtin.set_fact:
@@ -216,7 +216,7 @@
       when: >-
         (ilo_datetime.json.TimeZone.Index | int != ilo_timezone_matches[0].Index | int) or
         (ilo_datetime.json.StaticNTPServers | default([]) != ntp_servers)
-      no_log: "{{ ilo_no_log }}"
+      no_log: "{{ no_log }}"
 
     - name: Read iLO Ethernet interface collection
       ansible.builtin.uri:
@@ -224,7 +224,7 @@
         method: GET
         status_code: 200
       register: ilo_ethernet_collection
-      no_log: "{{ ilo_no_log }}"
+      no_log: "{{ no_log }}"
 
     - name: Select iLO management Ethernet interface
       ansible.builtin.set_fact:
@@ -239,7 +239,7 @@
         method: GET
         status_code: 200
       register: ilo_network
-      no_log: "{{ ilo_no_log }}"
+      no_log: "{{ no_log }}"
 
     - name: Configure iLO host name, domain and DNS servers
       ansible.builtin.uri:
@@ -262,7 +262,7 @@
         (ilo_network.json.StaticNameServers | default([]) != dns_servers) or
         (ilo_network.json.DHCPv4.UseDNSServers | default(true) | bool) or
         (ilo_network.json.DHCPv4.UseDomainName | default(true) | bool)
-      no_log: "{{ ilo_no_log }}"
+      no_log: "{{ no_log }}"
 
     - name: Read SNMP service
       ansible.builtin.uri:
@@ -270,7 +270,7 @@
         method: GET
         status_code: 200
       register: ilo_snmp
-      no_log: "{{ ilo_no_log }}"
+      no_log: "{{ no_log }}"
 
     - name: Read iLO manager network protocols
       ansible.builtin.uri:
@@ -278,7 +278,7 @@
         method: GET
         status_code: 200
       register: ilo_network_protocol
-      no_log: "{{ ilo_no_log }}"
+      no_log: "{{ no_log }}"
 
     - name: Enable the SNMP protocol
       ansible.builtin.uri:
@@ -290,7 +290,7 @@
             ProtocolEnabled: true
         status_code: [200, 204]
       when: not (ilo_network_protocol.json.SNMP.ProtocolEnabled | default(false) | bool)
-      no_log: "{{ ilo_no_log }}"
+      no_log: "{{ no_log }}"
 
     - name: Enable SNMP and SNMPv1 traps
       ansible.builtin.uri:
@@ -306,7 +306,7 @@
         not (ilo_snmp.json.AlertsEnabled | default(false) | bool) or
         not (ilo_snmp.json.SNMPv1Enabled | default(false) | bool) or
         not (ilo_snmp.json.SNMPv1TrapEnabled | default(false) | bool)
-      no_log: "{{ ilo_no_log }}"
+      no_log: "{{ no_log }}"
 
     - name: Determine SNMP destination collection URI
       ansible.builtin.set_fact:
@@ -320,7 +320,7 @@
         method: GET
         status_code: 200
       register: ilo_snmp_destinations
-      no_log: "{{ ilo_no_log }}"
+      no_log: "{{ no_log }}"
 
     - name: Read configured SNMP trap destinations
       ansible.builtin.uri:
@@ -329,7 +329,7 @@
         status_code: 200
       loop: "{{ ilo_snmp_destinations.json.Members | default([]) }}"
       register: ilo_snmp_destination_details
-      no_log: "{{ ilo_no_log }}"
+      no_log: "{{ no_log }}"
 
     - name: Select an existing matching SNMP destination
       ansible.builtin.set_fact:
@@ -350,7 +350,7 @@
           TrapCommunity: "{{ snmp_community }}"
         status_code: [200, 201, 204]
       when: ilo_matching_snmp_destinations | length == 0
-      no_log: "{{ ilo_no_log }}"
+      no_log: "{{ no_log }}"
 
     - name: Update matching SNMPv1 trap destination
       ansible.builtin.uri:
@@ -366,7 +366,7 @@
         ilo_matching_snmp_destinations | length > 0 and
         (ilo_matching_snmp_destinations[0].json.SNMPAlertProtocol | default('') != 'SNMPv1Trap' or
          ilo_matching_snmp_destinations[0].json.TrapCommunity | default('') != snmp_community)
-      no_log: "{{ ilo_no_log }}"
+      no_log: "{{ no_log }}"
 
 - name: Configure Dell PowerEdge iDRAC 9 or 10
   hosts: "{{ 'localhost' if hostvars['localhost']['bmc_vendor'] == 'dell' else 'bmc_vendor_not_selected' }}"
@@ -425,4 +425,4 @@
           SNMP.1.TrapFormat: SNMPv1
           "SNMPAlert.{{ idrac_snmp_destination_index }}.Destination": "{{ snmp_destination }}"
           "SNMPAlert.{{ idrac_snmp_destination_index }}.State": Enabled
-      no_log: "{{ idrac_no_log }}"
+      no_log: "{{ no_log }}"

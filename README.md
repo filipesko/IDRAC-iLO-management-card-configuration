@@ -45,7 +45,7 @@ The matching file is loaded automatically:
 
 These files contain the remaining settings, including the password, shared
 `domain_name`, shared `dns_servers` and `ntp_servers`, timezone, certificate
-policy, shared `snmp_destination`, and `snmp_community`.
+policy, shared `snmp_destination`, `snmp_community`, and `no_log` policy.
 Replace all example values before use.
 
 Each regional file specifies its timezone once using the IANA-style convention
