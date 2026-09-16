@@ -122,9 +122,9 @@
     # different iLO firmware generations. The actual TimeZoneList entry is
     # selected dynamically below, so no numeric index is hard-coded.
     ilo_timezone_name_map:
-      US/Eastern: [EST5EDT, UtcM5, "Eastern Time(US & Canada)", "Eastern Time (US & Canada)"]
-      Europe/Brussels: [CET-1CEST, CET, UtcP1, "Amsterdam, Berlin, Rome, Paris, West Central Africa", "Amsterdam, Berlin, Bern, Rome, Stockholm, Vienna"]
-      Asia/Shanghai: [CST-8, UtcP8, "Beijing, Chongqing, Hong Kong, Urumqi", "Taipei, Beijing, Chongqing, Hong Kong, Urumqi"]
+      US/Eastern: ["Bogota, Lima, Quito, Eastern Time(US & Canada)(GMT-05:00:00)"]
+      Europe/Brussels: ["Amsterdam, Berlin, Bern, Rome, Paris, West Centar Africa (GMT+01:00:00)"]
+      Asia/Shanghai: ["Bejing, Chongqing, Hong Kong, Urumqi, Taipei, Perth (GMT+08:00:00)"]
 
   pre_tasks:
     - name: Validate required settings
