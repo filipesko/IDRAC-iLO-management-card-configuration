@@ -240,7 +240,31 @@
       register: ilo_network
       no_log: "{{ no_log }}"
 
-    - name: Configure iLO host name, domain, DNS and NTP source
+    - name: Disable DHCP-provided domain, DNS and NTP settings
+      ansible.builtin.uri:
+        url: "{{ ilo_base_url }}{{ ilo_ethernet_uri }}"
+        method: PATCH
+        body_format: json
+        body:
+          DHCPv4:
+            UseDNSServers: false
+            UseDomainName: false
+            UseNTPServers: false
+          DHCPv6:
+            UseDNSServers: false
+            UseDomainName: false
+            UseNTPServers: false
+        status_code: [200, 204]
+      when: >-
+        (ilo_network.json.DHCPv4.UseDNSServers | default(true) | bool) or
+        (ilo_network.json.DHCPv4.UseDomainName | default(true) | bool) or
+        (ilo_network.json.DHCPv4.UseNTPServers | default(true) | bool) or
+        (ilo_network.json.DHCPv6.UseDNSServers | default(true) | bool) or
+        (ilo_network.json.DHCPv6.UseDomainName | default(true) | bool) or
+        (ilo_network.json.DHCPv6.UseNTPServers | default(true) | bool)
+      no_log: "{{ no_log }}"
+
+    - name: Configure iLO host name, domain and DNS servers
       ansible.builtin.uri:
         url: "{{ ilo_base_url }}{{ ilo_ethernet_uri }}"
         method: PATCH
@@ -248,10 +272,6 @@
         body:
           HostName: "{{ bmc_hostname }}"
           StaticNameServers: "{{ dns_servers }}"
-          DHCPv4:
-            UseDNSServers: false
-            UseDomainName: false
-            UseNTPServers: false
           Oem:
             Hpe:
               DomainName: "{{ domain_name }}"
@@ -259,10 +279,7 @@
       when: >-
         (ilo_network.json.HostName | default('') != bmc_hostname) or
         (ilo_network.json.Oem.Hpe.DomainName | default('') != domain_name) or
-        (ilo_network.json.StaticNameServers | default([]) != dns_servers) or
-        (ilo_network.json.DHCPv4.UseDNSServers | default(true) | bool) or
-        (ilo_network.json.DHCPv4.UseDomainName | default(true) | bool) or
-        (ilo_network.json.DHCPv4.UseNTPServers | default(true) | bool)
+        (ilo_network.json.StaticNameServers | default([]) != dns_servers)
       no_log: "{{ no_log }}"
 
     - name: Configure time zone and static NTP servers
