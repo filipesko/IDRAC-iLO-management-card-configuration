@@ -122,9 +122,9 @@
     # different iLO firmware generations. The actual TimeZoneList entry is
     # selected dynamically below, so no numeric index is hard-coded.
     ilo_timezone_name_map:
-      US/Eastern: ["Bogota, Lima, Quito, Eastern Time(US & Canada)(GMT-05:00:00)"]
-      Europe/Brussels: ["Amsterdam, Berlin, Bern, Rome, Paris, West Centar Africa (GMT+01:00:00)"]
-      Asia/Shanghai: ["Bejing, Chongqing, Hong Kong, Urumqi, Taipei, Perth (GMT+08:00:00)"]
+      US/Eastern: ["Bogota, Lima, Quito, Eastern Time(US & Canada)"]
+      Europe/Brussels: ["Amsterdam, Berlin, Bern, Rome, Paris, West Centar Africa"]
+      Asia/Shanghai: ["Bejing, Chongqing, Hong Kong, Urumqi, Taipei, Perth"]
 
   pre_tasks:
     - name: Validate required settings
@@ -177,6 +177,9 @@
         ilo_network_protocol_uri: >-
           {{ ilo_manager.json.NetworkProtocol['@odata.id']
              | default(ilo_manager_uri ~ '/NetworkProtocol') }}
+        ilo_reset_uri: >-
+          {{ ilo_manager.json.Actions['#Manager.Reset'].target
+             | default(ilo_manager_uri ~ '/Actions/Manager.Reset') }}
 
     - name: Read iLO date and time settings
       ansible.builtin.uri:
@@ -399,6 +402,16 @@
         ilo_matching_snmp_destinations | length > 0 and
         (ilo_matching_snmp_destinations[0].json.SNMPAlertProtocol | default('') != 'SNMPv1Trap' or
          ilo_matching_snmp_destinations[0].json.TrapCommunity | default('') != snmp_community)
+      no_log: "{{ no_log }}"
+
+    - name: Restart iLO after configuration
+      ansible.builtin.uri:
+        url: "{{ ilo_base_url }}{{ ilo_reset_uri }}"
+        method: POST
+        body_format: json
+        body:
+          ResetType: ForceRestart
+        status_code: [200, 202, 204]
       no_log: "{{ no_log }}"
 
 - name: Configure Dell PowerEdge iDRAC 9 or 10
