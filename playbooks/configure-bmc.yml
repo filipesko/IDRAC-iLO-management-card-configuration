@@ -217,21 +217,6 @@
           controller's TimeZoneList to ilo_timezone_name_map. Available entries:
           {{ ilo_datetime.json.TimeZoneList | default([]) }}
 
-    - name: Configure time zone and static NTP servers
-      ansible.builtin.uri:
-        url: "{{ ilo_base_url }}{{ ilo_datetime_uri }}"
-        method: PATCH
-        body_format: json
-        body:
-          TimeZone:
-            Index: "{{ ilo_timezone_matches[0].Index }}"
-          StaticNTPServers: "{{ ntp_servers }}"
-        status_code: [200, 204]
-      when: >-
-        (ilo_datetime.json.TimeZone.Index | int != ilo_timezone_matches[0].Index | int) or
-        (ilo_datetime.json.StaticNTPServers | default([]) != ntp_servers)
-      no_log: "{{ no_log }}"
-
     - name: Read iLO Ethernet interface collection
       ansible.builtin.uri:
         url: "{{ ilo_base_url }}{{ ilo_ethernet_collection_uri }}"
@@ -255,7 +240,7 @@
       register: ilo_network
       no_log: "{{ no_log }}"
 
-    - name: Configure iLO host name, domain and DNS servers
+    - name: Configure iLO host name, domain, DNS and NTP source
       ansible.builtin.uri:
         url: "{{ ilo_base_url }}{{ ilo_ethernet_uri }}"
         method: PATCH
@@ -266,6 +251,7 @@
           DHCPv4:
             UseDNSServers: false
             UseDomainName: false
+            UseNTPServers: false
           Oem:
             Hpe:
               DomainName: "{{ domain_name }}"
@@ -275,7 +261,23 @@
         (ilo_network.json.Oem.Hpe.DomainName | default('') != domain_name) or
         (ilo_network.json.StaticNameServers | default([]) != dns_servers) or
         (ilo_network.json.DHCPv4.UseDNSServers | default(true) | bool) or
-        (ilo_network.json.DHCPv4.UseDomainName | default(true) | bool)
+        (ilo_network.json.DHCPv4.UseDomainName | default(true) | bool) or
+        (ilo_network.json.DHCPv4.UseNTPServers | default(true) | bool)
+      no_log: "{{ no_log }}"
+
+    - name: Configure time zone and static NTP servers
+      ansible.builtin.uri:
+        url: "{{ ilo_base_url }}{{ ilo_datetime_uri }}"
+        method: PATCH
+        body_format: json
+        body:
+          TimeZone:
+            Index: "{{ ilo_timezone_matches[0].Index }}"
+          StaticNTPServers: "{{ ntp_servers }}"
+        status_code: [200, 204]
+      when: >-
+        (ilo_datetime.json.TimeZone.Index | int != ilo_timezone_matches[0].Index | int) or
+        (ilo_datetime.json.StaticNTPServers | default([]) != ntp_servers)
       no_log: "{{ no_log }}"
 
     - name: Read SNMP service
