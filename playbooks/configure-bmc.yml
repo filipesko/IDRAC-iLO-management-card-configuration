@@ -22,15 +22,22 @@
           - bmc_username | default('') | length > 0
           - bmc_hostname | default('') | length > 0
           - region | default('') | upper in ['EMEA', 'NASA', 'APAC']
+          - site_id | default('') is match('^[a-z]{3}[0-9]{3} - \\S.*$')
         fail_msg: >-
-          Required inputs are bmc_ip, bmc_username, bmc_hostname, and region.
-          Region must be EMEA, NASA, or APAC.
+          Required inputs are bmc_ip, bmc_username, bmc_hostname, region, and site_id.
+          Region must be EMEA, NASA, or APAC. site_id must use the format
+          'abc000 - descriptive site name'.
 
     - name: Load region-specific configuration
       ansible.builtin.include_vars:
         file: "../vars/{{ region | lower }}_vars.yml"
 
-    - name: Validate region-specific variable schema
+    - name: Load OpenManage Enterprise credentials
+      ansible.builtin.include_vars:
+        file: ../vars/vcenter_srv_vault.enc
+      no_log: true
+
+    - name: Validate loaded configuration schema
       ansible.builtin.assert:
         that:
           - bmc_password | default('') | length > 0
@@ -51,9 +58,16 @@
           - idrac_snmp_destination_index | default(0) | int >= 1
           - idrac_snmp_destination_index | default(0) | int <= 8
           - idrac_timeout | default(0) | int > 0
+          - openmanage | default({}) | type_debug == 'dict'
+          - openmanage.hostname | default('') | length > 0
+          - openmanage.username | default('') | length > 0
+          - openmanage.password | default('') | length > 0
+          - ome_validate_certs | default('') | type_debug == 'bool'
+          - ome_timeout | default(0) | int > 0
+          - ome_discovery_job_wait_timeout | default(0) | int > 0
         fail_msg: >-
-          The variable schema in vars/{{ region | lower }}_vars.yml is incomplete
-          or invalid. Compare it with the other regional files.
+          The configuration in vars/{{ region | lower }}_vars.yml or
+          vars/vcenter_srv_vault.enc is incomplete or invalid.
 
     - name: Read Redfish manager collection for vendor discovery
       ansible.builtin.uri:
@@ -471,4 +485,99 @@
           SNMP.1.TrapFormat: SNMPv1
           "SNMPAlert.{{ idrac_snmp_destination_index }}.Destination": "{{ snmp_destination }}"
           "SNMPAlert.{{ idrac_snmp_destination_index }}.State": Enabled
+      no_log: "{{ no_log }}"
+
+- name: Discover and group the server in Dell OpenManage Enterprise
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Wait for the management controller HTTPS service
+      ansible.builtin.wait_for:
+        host: "{{ bmc_ip }}"
+        port: 443
+        state: started
+        delay: "{{ 15 if bmc_vendor == 'hpe' else 0 }}"
+        timeout: "{{ ome_discovery_job_wait_timeout }}"
+
+    - name: Discover iDRAC in OpenManage Enterprise using WS-Man
+      dellemc.openmanage.ome_discovery:
+        hostname: '{{ openmanage.hostname }}'
+        username: '{{ openmanage.username }}'
+        password: '{{ openmanage.password }}'
+        validate_certs: "{{ ome_validate_certs }}"
+        timeout: "{{ ome_timeout }}"
+        discovery_job_name: "Ansible {{ bmc_vendor }} discovery {{ bmc_ip }}"
+        discovery_config_targets:
+          - network_address_detail:
+              - "{{ bmc_ip }}"
+            device_types:
+              - SERVER
+            wsman:
+              username: "{{ bmc_username }}"
+              password: "{{ bmc_password }}"
+              ca_check: "{{ bmc_validate_certs }}"
+        job_wait: true
+        job_wait_timeout: "{{ ome_discovery_job_wait_timeout }}"
+      when: bmc_vendor == 'dell'
+      no_log: "{{ no_log }}"
+
+    - name: Discover iLO in OpenManage Enterprise using Redfish
+      dellemc.openmanage.ome_discovery:
+        hostname: '{{ openmanage.hostname }}'
+        username: '{{ openmanage.username }}'
+        password: '{{ openmanage.password }}'
+        validate_certs: "{{ ome_validate_certs }}"
+        timeout: "{{ ome_timeout }}"
+        discovery_job_name: "Ansible {{ bmc_vendor }} discovery {{ bmc_ip }}"
+        discovery_config_targets:
+          - network_address_detail:
+              - "{{ bmc_ip }}"
+            device_types:
+              - SERVER
+            redfish:
+              username: "{{ bmc_username }}"
+              password: "{{ bmc_password }}"
+              ca_check: "{{ bmc_validate_certs }}"
+        job_wait: true
+        job_wait_timeout: "{{ ome_discovery_job_wait_timeout }}"
+      when: bmc_vendor == 'hpe'
+      no_log: "{{ no_log }}"
+
+    - name: Ensure the regional static group exists
+      dellemc.openmanage.ome_groups:
+        hostname: '{{ openmanage.hostname }}'
+        username: '{{ openmanage.username }}'
+        password: '{{ openmanage.password }}'
+        validate_certs: "{{ ome_validate_certs }}"
+        timeout: "{{ ome_timeout }}"
+        name: "{{ region | upper }}"
+        parent_group_name: Static Groups
+        state: present
+      no_log: "{{ no_log }}"
+
+    - name: Ensure the site static group exists under its region
+      dellemc.openmanage.ome_groups:
+        hostname: '{{ openmanage.hostname }}'
+        username: '{{ openmanage.username }}'
+        password: '{{ openmanage.password }}'
+        validate_certs: "{{ ome_validate_certs }}"
+        timeout: "{{ ome_timeout }}"
+        name: "{{ site_id }}"
+        parent_group_name: "{{ region | upper }}"
+        state: present
+      no_log: "{{ no_log }}"
+
+    - name: Add the discovered server to its site static group
+      dellemc.openmanage.ome_device_group:
+        hostname: '{{ openmanage.hostname }}'
+        username: '{{ openmanage.username }}'
+        password: '{{ openmanage.password }}'
+        validate_certs: "{{ ome_validate_certs }}"
+        timeout: "{{ ome_timeout }}"
+        name: "{{ site_id }}"
+        ip_addresses:
+          - "{{ bmc_ip }}"
+        state: present
       no_log: "{{ no_log }}"
